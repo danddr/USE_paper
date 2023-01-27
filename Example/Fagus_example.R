@@ -1,4 +1,4 @@
-# Code for the analyses of Fagus sylvatica: an example on how to use the UEsampling package to uniformly sample
+# Code for the analyses of Fagus sylvatica: an example on how to use the USE package to uniformly sample
 #background points within the environmental space
 # Author: Manuele Bazzichetto
 # Date: May, 20th, 2022
@@ -19,9 +19,9 @@ library(car)
 library(caret) #findCorrelation
 library(performance) #performance function
 library(ranger)
-#install UEsampling
+#install USE
 library(devtools)
-library(UEsampling)
+library(USE)
 #working in parallel
 library(parallel)
 
@@ -29,9 +29,8 @@ library(parallel)
 
 #1) function for model cross-validation and the (parallelised) version of optimRes can be found at the bottom of this script
 
-#2) to-install UEsampling from GitHub repo - last instal.: Dec, 11th 2021
-#devtools::install_github("danddr/UEsampling",
-#                         auth_token="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",
+#2) to-install USE from GitHub repo - last instal.: Dec, 11th 2021
+#devtools::install_github("danddr/USE",
 #                         ref="main", force=TRUE, build_vignettes = TRUE)
 
 #3) data for replicating the analyses can be found at the following sources:
@@ -42,7 +41,7 @@ library(parallel)
 ##Get climatic data -------------------------------------------------------------
 #2.5 (degrees at the Equator) resolution. Date of last download: May, 18th (2022)
 BioClimateData <- getData(name = "worldclim", download = T, res = 2.5, var = "bio",
-                          path = "~/Documents/UEsampling/WorldClim/") #here, put a directory where to store climatic data
+                          path = "~/Documents/USE/WorldClim/") #here, put a directory where to store climatic data
 
 class(BioClimateData)
 crs(BioClimateData)
@@ -89,7 +88,7 @@ PCstack.df <- as.data.frame(PCstack, xy = T, na.rm = T)
 #make the PCstack.df spatial
 PCstack.sp <- st_as_sf(PCstack.df, coords = c("PC1", "PC2"))
 
-#set the clusters for parallelised version of UEsampling::optim_res
+#set the clusters for parallelised version of USE::optimRes
 cr7 <- makeCluster(7)
 #clusterExport is to export variables to the clusters
 clusterExport(cr7, "PCstack.sp")
@@ -98,7 +97,7 @@ clusterEvalQ(cr7, library(sf))
 
 #get optimal resolution of the grid for sampling European environmental space
 #stopClusters is called internally
-Optres_Eu <- parOptim_res(sdf = PCstack.sp, grid.res = seq(1, 15), cr = cr7, showOpt = T)
+Optres_Eu <- optimRes(sdf = PCstack.sp, grid.res = seq(1, 15), cr = cr7, showOpt = T)
 
 ##Get Fagus sylvatica data from sPlot ------------------------------------------ 
 #notice that these data will be used as a supplementary testing dataset to assess the
@@ -107,7 +106,7 @@ Optres_Eu <- parOptim_res(sdf = PCstack.sp, grid.res = seq(1, 15), cr = cr7, sho
 
 #import sPlotOpen matrices from sPlotOpen.RData
 #all matrices + an R function for automatically generating a list of data references will be imported
-load("~/Documents/UEsampling/sPlotOpen.RData") #use the directory where sPlotOpen is stored
+load("~/Documents/USE/sPlotOpen.RData") #use the directory where sPlotOpen is stored
 
 #these are all "tbl_df", "tbl", "data.frame" -> coerce to data.frame
 vapply(list(header.oa, DT2.oa, metadata.oa, CWM_CWV.oa, reference.oa), class, FUN.VALUE = character(3))
@@ -173,7 +172,7 @@ table(Fagus.sPlot$PA) #366 presences, 4038 absences
 ##Get Fagus sylvatica data from EU-forest --------------------------------------
 
 #import EU-forest data
-EU_forest <- read.csv(file = "~/Documents/UEsampling/EU_forest_occ/EUForestspecies.csv", sep = ",",
+EU_forest <- read.csv(file = "~/Documents/USE/EU_forest_occ/EUForestspecies.csv", sep = ",",
                       header = T, stringsAsFactors = F) #use the directory where EUForest.csv is stored
 
 #remove EU-forest to save memory
@@ -209,10 +208,10 @@ EU_F_IFS.Fag.geo <- st_transform(EU_forest.IFS.Fag.sp, crs = 4326)
 mapview(BioClimateData.Eu[[1]]) + mapview(EU_F_IFS.Fag.geo)
 
 #there are 12.444 obs for Fagus sylvatica (presences)
-#uesampling (from UEsampling) will be used to subset both presences and absences within the env. space
+#uniformSampling (from USE) will be used to subset both presences and absences within the env. space
 #the same will be done for getting testing presences and absences
 
-##Subset presences within the environmental space with uesampling --------------
+##Subset presences within the environmental space with uniformSampling --------------
 
 #extract PC1/2 values from presence points
 #PCstack was created using BioClimateData.EU
@@ -238,11 +237,11 @@ mapview(PCstack[[1]]) + mapview(EU_F_IFS.Fag.geo[which(is.na(EU_F_IFS.Fag.geo$PC
 #assign new geometry column
 EU_Fag.pres <- st_as_sf(na.omit(EU_Fag.pres), coords = c("PC1", "PC2"))
 
-#subset presences using uesampling
+#subset presences using uniformSampling
 #100 presences will be (whenever possible) sampled from each cell of the sampling grid
 #same thing will be done to sample testing presences
 set.seed(17292)
-Fag.pres.tr.ts <- UEsampling::uesampling(sdf = EU_Fag.pres, grid.res = Optres_Eu$Opt_res,
+Fag.pres.tr.ts <- USE::uniformSampling(sdf = EU_Fag.pres, grid.res = Optres_Eu$Opt_res,
                                          n.tr = 100, sub.ts = T, n.ts = 100, plot_proc = T)
 
 #count number of training and testing presences for country
@@ -269,7 +268,7 @@ mapview(PCstack[[1]]) + mapview(Fag.pres.tr.ts.sp$Bkg.tr, color = "blue") + mapv
 set.seed(17387)
 12444/(nrow(Fag.pres.tr.ts$Bkg.tr)) #our prevalence is 6.75937
 
-Fag.abs.UE <- UEsampling::bkgsampling(env.rast = BioClimateData.Eu,
+Fag.abs.UE <- USE::paSampling(env.rast = BioClimateData.Eu,
                                       pres = as(EU_F_IFS.Fag.geo, "Spatial"), n.tr = 20,
                                       grid.res = Optres_Eu$Opt_res, prev = 6.75937,
                                       sub.ts = T, n.ts = 150, plot_proc = T)
@@ -464,47 +463,6 @@ plot(RF_FagusEU.pred)
 plot(raster::predict(Fagus_vars.stack, Mod_FagusEU.2, type = "response"))
 
 ##Functions used ---------------------------------------------------------------------------
-
-#parallelised version of optim_res
-parOptim_res <- function (sdf, grid.res, perc.thr = 10, cr = NULL, showOpt = TRUE) {
-  if (!require(sf)) 
-    install.packages("sf")
-  stopifnot(exprs = {
-    is.numeric(perc.thr)
-    is.numeric(grid.res)
-    is.logical(showOpt)
-    inherits(sdf, "sf")
-  })
-  if(is.null(cr)) stop("Please, provide a cluster")
-  grid.res <- sort(grid.res, decreasing = FALSE)
-  SS_vec <- parSapply(cr, grid.res, function(res) {
-    Grd <- st_make_grid(sdf, n = res)
-    SS_mean <- mean(sapply(Grd, function(i) {
-      X <- sdf[i, ]
-      if (nrow(X) >= 2) {
-        X_c <- st_centroid(st_convex_hull(st_union(X)))
-        D <- sum(as.numeric(st_distance(X, X_c))^2)/nrow(X)
-        return(D)
-      }
-      else {
-        return(NA_real_)
-      }
-    }), na.rm = TRUE)
-    return(SS_mean)
-  })
-  stopCluster(cr) #stop clusters used in parSapply
-  SS_vec <- sqrt(SS_vec)
-  Rat_chg <- SS_vec[1:(length(SS_vec) - 1)]/SS_vec[2:length(SS_vec)]
-  Res_opt <- grid.res[(which(Rat_chg <= ((perc.thr/100) + 1))[1])]
-  if (showOpt) {
-    plot(grid.res, SS_vec, type = "b", xlab = "Grid resolution", 
-         ylab = "Function", main = "Optimal grid resolution")
-    abline(v = Res_opt, col = "red")
-  }
-  return(list(F_val = cbind(Fval = SS_vec, Res = grid.res), 
-              Opt_res = Res_opt))
-}
-
 #function for cross validation - now implemented for both GLM & RF
 cross_val <- function(df, pa_col, formula, mod_type = c("GLM", "RF"), folds = 5L, ...) {
   require(ecospat)
