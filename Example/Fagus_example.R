@@ -27,13 +27,11 @@ library(parallel)
 
 #Some important info:
 
-#1) function for model cross-validation and the (parallelised) version of optimRes can be found at the bottom of this script
-
-#2) to-install USE from GitHub repo - last instal.: Dec, 11th 2021
+#1) to-install USE from GitHub repo - last instal.: Dec, 11th 2021
 #devtools::install_github("danddr/USE",
 #                         ref="main", force=TRUE, build_vignettes = TRUE)
 
-#3) data for replicating the analyses can be found at the following sources:
+#2) data for replicating the analyses can be found at the following sources:
 #WorldClim -> automatically doewnloaded using raster::getData
 #sPlotOpen -> https://idata.idiv.de/ddm/Data/ShowData/3474?version=54
 #EU-Forest -> https://figshare.com/articles/dataset/Occurrences_location_shapefile/3497891?backTo=/collections/A_high-resolution_pan-European_tree_occurrence_dataset/3288407
@@ -259,7 +257,7 @@ Fag.pres.tr.ts.sp <- lapply(Fag.pres.tr.ts, function(x) {
 
 mapview(PCstack[[1]]) + mapview(Fag.pres.tr.ts.sp$Bkg.tr, color = "blue") + mapview(Fag.pres.tr.ts.sp$Bkg.ts, color = "red")
 
-#subset absences using bkgsampling
+#subset absences using paSampling
 #here we use all available presences (12.444) to safely exclude all absences located in areas
 #of the environmental space where conditions may actually be suitable for Fagus sylvatica (presences)
 #however, as we want prevalence to be = 1, we set the prev arg as if we were using Fag.pres.tr.ts$Bkg.tr
