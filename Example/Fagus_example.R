@@ -1,14 +1,13 @@
 # Code for the analyses of Fagus sylvatica: an example on how to use the USE package to uniformly sample
 #background points within the environmental space
-# Author: Manuele Bazzichetto
-# Date: May, 20th, 2022
+# Author: Manuele Bazzichetto, Daniele Da Re
+# Date: April, 11th, 2023
 # manuele.bazzichetto@gmail.com
 
 #R libraries
 #handle spatial data
 library(sf)
-library(raster)
-library(RStoolbox)
+library(terra)
 #plot data
 library(mapview)
 library(ggplot2)
@@ -32,14 +31,13 @@ library(parallel)
 #                         ref="main", force=TRUE, build_vignettes = TRUE)
 
 #2) data for replicating the analyses can be found at the following sources:
-#WorldClim -> automatically doewnloaded using raster::getData
+#WorldClim -> automatically doewnloaded using geodata::worldclim_global
 #sPlotOpen -> https://idata.idiv.de/ddm/Data/ShowData/3474?version=54
 #EU-Forest -> https://figshare.com/articles/dataset/Occurrences_location_shapefile/3497891?backTo=/collections/A_high-resolution_pan-European_tree_occurrence_dataset/3288407
 
 ##Get climatic data -------------------------------------------------------------
-#2.5 (degrees at the Equator) resolution. Date of last download: May, 18th (2022)
-BioClimateData <- getData(name = "worldclim", download = T, res = 2.5, var = "bio",
-                          path = "~/Documents/USE/WorldClim/") #here, put a directory where to store climatic data
+#2.5 (degrees at the Equator) resolution. Date of last download: April, 11th (2023)
+BioClimateData <-  geodata::worldclim_global(var='bio', res=2.5, path = "~/Documents/USE/WorldClim/") #here, put a directory where to store climatic data
 
 class(BioClimateData)
 crs(BioClimateData)
@@ -58,7 +56,7 @@ compareCRS(BioClimateData, IFS_poly)
 #crop and mask BioClimateData to get BioClimateData.Eu
 BioClimateData.Eu <- crop(BioClimateData, extent(st_bbox(IFS_poly)))
 
-BioClimateData.Eu <- raster::mask(BioClimateData.Eu, as(IFS_poly, "Spatial"))
+BioClimateData.Eu <- terra::mask(BioClimateData.Eu, as(IFS_poly, "Spatial"))
 
 #Bioclimatic variables from Bio1 to Bio11 must be scaled by 10 or 100 (Bio3 & Bio4)
 
@@ -76,11 +74,11 @@ rm(BioClimateData)
 plot(BioClimateData.Eu$bio1)
 
 ## Find optimal resolution for sampling European environmental (here climatic) space ----
-PCA_Eu <- RStoolbox::rasterPCA(img = BioClimateData.Eu, nSamples = NULL, nComp = 2, spca = T)
+PCA_Eu <- USE::rastPCA(env.rast = BioClimateData.Eu, nPC = 2, stand = TRUE)
 
-PCstack <- raster::stack(PCA_Eu$map$PC1, PCA_Eu$map$PC2)
+PCstack <- c(PCA_Eu$PCs$PC1, PCA_Eu$PCs$PC2)
 
-#Get dataframe from PCstack - see also fortify() in RStoolbox
+#Get dataframe from PCstack
 PCstack.df <- as.data.frame(PCstack, xy = T, na.rm = T)
 
 #make the PCstack.df spatial
@@ -160,7 +158,7 @@ Fagus.sPlot <- rbind(Fagus.sPlot, Fagus.abs.sPlot)
 colnames(Fagus.sPlot)[-1] <- c("long", "lat") 
 
 #get bioclimatic values for presence/absence data
-Fagus.sPlot <- data.frame(Fagus.sPlot, raster::extract(BioClimateData.Eu, Fagus.sPlot[c("long", "lat")]))
+Fagus.sPlot <- data.frame(Fagus.sPlot, terra::extract(BioClimateData.Eu, Fagus.sPlot[c("long", "lat")]))
 
 #get rid of NAs
 Fagus.sPlot <- na.omit(Fagus.sPlot)
@@ -213,7 +211,7 @@ mapview(BioClimateData.Eu[[1]]) + mapview(EU_F_IFS.Fag.geo)
 
 #extract PC1/2 values from presence points
 #PCstack was created using BioClimateData.EU
-EU_Fag.PC12 <- raster::extract(PCstack, EU_F_IFS.Fag.geo)
+EU_Fag.PC12 <- terra::extract(PCstack, EU_F_IFS.Fag.geo)
 
 #these columns will serve as coordinates of the presences within the environmental space
 EU_F_IFS.Fag.geo$PC1 <- EU_Fag.PC12[, 1]
@@ -289,7 +287,7 @@ FagusEU_data <- Map(function(x, y) {
   y <- data.frame(PA = 0, st_coordinates(y))
   colnames(x)[-1] <- colnames(y)[-1] <- c("long", "lat")
   df <- rbind(x, y)
-  df <- data.frame(df, raster::extract(BioClimateData.Eu, df[c(2, 3)]))
+  df <- data.frame(df, terra::extract(BioClimateData.Eu, df[c(2, 3)]))
   return(df)
 }, x = Fag.pres.tr.ts.sp, y = Fag.abs.tr.ts.sp)
 
@@ -458,7 +456,7 @@ par(mfrow = c(1, 2))
 plot(RF_FagusEU.pred)
 
 #notice that color scales differ between figures (i.e range of predictions is much shorter for GLM)
-plot(raster::predict(Fagus_vars.stack, Mod_FagusEU.2, type = "response"))
+plot(terra::predict(Fagus_vars.stack, Mod_FagusEU.2, type = "response"))
 
 ##Functions used ---------------------------------------------------------------------------
 #function for cross validation - now implemented for both GLM & RF
