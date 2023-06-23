@@ -1,6 +1,5 @@
 
 #---- 1. Load libraries and external functions -----
-library(iSDM)
 library(raster)
 library(virtualspecies)
 library(sdm)
@@ -22,29 +21,29 @@ library(USE)
 
 #---- 2. Download bioclimatic rasters -----
 #download bioclimatic raster
-Worldclim<-raster::getData('worldclim', var='bio', res=10) 
-envData<-crop(Worldclim, extent(-12, 25, 36, 60))
+Worldclim <- raster::getData('worldclim', var='bio', res=10) 
+envData <-crop(Worldclim, extent(-12, 25, 36, 60))
 envData
 rm(Worldclim)
-rpc<-rasterPCA(envData,spca = TRUE)
+rpc <-rasterPCA(envData,spca = TRUE)
 dt <- na.omit(data.table(as.data.frame(rpc$map[[c("PC1", "PC2")]], xy = TRUE)))
-dt=st_as_sf(dt, coords = c("PC1", "PC2"))
-myRes=USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr = 4)
+dt <- st_as_sf(dt, coords = c("PC1", "PC2"))
+myRes <- USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr = 4)
 
 
 #---- 3. Generate virtual species, create background points using different methodologies, SDMs exercise and models statistics -----
-nVirtspecies=10#50
-percTesting=30
-Nreps=5
-myFold=5
-myCores=5
-BuffSize<-50000 #in meters
-myCRS<-"+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
-Vsprev=0.25 #species geographic prevalence 
-bgk_prev= 1 #sample prevalence 
+nVirtspecies <- 10
+percTesting <- 30
+Nreps <- 5
+myFold <- 5
+myCores <- 5
+BuffSize <- 50000 #in meters
+myCRS <-"+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
+Vsprev <- 0.25 #species geographic prevalence 
+bgk_prev <- 1 #sample prevalence 
 
 #run the whole framework
-myVirtualSP_list=list()
+myVirtualSP_list <- list()
 
 for(myVs in 1:nVirtspecies){
   # myVs=1
@@ -190,40 +189,39 @@ saveRDS(myVirtualSP_list, outname)
 #---- 4. Plotting the results----
 require(hypervolume)
 library(tidyverse)
-myVirtualSP_list=readRDS("10vs_prev1_occOnly_radius_ClassOverlap_50km_2022-10-10.RDS")
-myVirtualSP_list=myProc_out=do.call(rbind, myVirtualSP_list)
 
-tmp <-myProc_out %>%
+myVirtualSP_list <- readRDS("10vs_prev1_occOnly_radius_NicheOverlap_newKernel_50km_2023-06-14.RDS")
+myProc_out <- do.call(rbind, myVirtualSP_list)
+
+tmp <-  myProc_out %>%
   as_tibble() %>%
   dplyr::select(training_set, exp_prevalence,
-                nPredictorsPCA, Overlap) %>%
-  mutate(training_set=as.factor(training_set),
+                nPredictorsPCA, Overlap) %>% 
+    filter(training_set!= "mytrain_buf_in") %>% 
+    mutate(training_set=as.factor(training_set),
          exp_prevalence=as.factor(exp_prevalence),
-         nPredictorsModel=as.factor(nPredictorsPCA)) %>%
-  mutate(Overlap=round(as.numeric(gsub(",", "", Overlap)),3)) %>% 
-  mutate(trainig_set=factor(training_set, levels= c("mytrain_grid", "mytrain_rand", 
-                                                    "mytrain_buf_in", "mytrain_buf_out"))) %>% 
-  mutate(new_name_tr_set=recode(training_set, myTrue_Abs = "True Absences",
-                                mytrain_grid= "Uniform", mytrain_rand= "Random",
-                                mytrain_buf_in= "BufferIn", mytrain_buf_out="BufferOut")) %>%
-  mutate(new_name_tr_set=factor(new_name_tr_set,levels = c("Uniform", 'Random',"BufferIn","BufferOut")))
+         nPredictorsModel=as.factor(nPredictorsPCA),
+         Overlap=round(as.numeric(gsub(",", "", Overlap)),3), 
+         trainig_set=factor(training_set, levels= c("mytrain_grid", "mytrain_rand",  "mytrain_buf_out")),
+        new_name_tr_set=recode(training_set,  mytrain_grid= "Uniform", mytrain_rand= "Random", mytrain_buf_out="BufferOut"),
+        new_name_tr_set=factor(new_name_tr_set,levels = c("Uniform", 'Random',"BufferIn", "BufferOut")))
 
 tmp
 summary(tmp)
 
-Npred=5
-mySpecies=10
-myPrev=1
-mytitle=paste0("N. species = ",mySpecies, "; Prevalence = ", myPrev, "; N. predictors= ", Npred)
+Npred <- 5
+mySpecies <- 10
+myPrev <- 1
+mytitle <- paste0("N. species = ",mySpecies, "; Prevalence = ", myPrev, "; N. predictors= ", Npred)
 
 # colorblind palette with black:
 cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 unique(tmp$new_name_tr_set)[1]
 
-p=tmp %>%
+p <- tmp %>%
   filter(nPredictorsModel == Npred) %>%
   ggplot(aes(y=Overlap, x= new_name_tr_set, color=new_name_tr_set))+
-  geom_violin()+
+  geom_boxplot()+
   stat_summary(fun = median, geom = "point", size = 2) +
   scale_color_manual(breaks = c("True Absences", "Uniform", "Random",  "BufferIn", "BufferOut" ),
                      values=c("#D55E00", "#0072B2", "#E69F00", "#009E73", "#CC79A7" ))+
@@ -239,9 +237,20 @@ p=tmp %>%
         strip.text = element_text(size=16),
         legend.text = element_text(size=16,angle = 0), 
         legend.title = element_text(size=14),
-        legend.key.size = unit(2, 'cm'))
+        legend.key.size = unit(1.5, 'cm'))
 p
-outname=paste("classOverlap_boxplot", Sys.Date(),".png", sep="")
+outname<- paste(outdir, "classOverlap_boxplot", Sys.Date(),".png", sep="")
 ggsave(p, filename = outname, width = 16, height = 8, device='png', dpi=320)
+
+#---- 5. ANOVA ----
+library(car)
+Npred<-5
+aov.df <- tmp %>%
+  filter(nPredictorsModel == Npred)
+
+overlap.aov <- aov(data = aov.df, Overlap~new_name_tr_set)
+car::qqPlot(resid(overlap.aov))
+summary(overlap.aov)
+TukeyHSD(overlap.aov, conf.level=.95)
 
 

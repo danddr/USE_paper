@@ -18,18 +18,19 @@ library(RStoolbox)
 library(data.table)
 library(ecospat)
 source("script/d_squared.R")
+
 #---- 2. Download bioclimatic rasters -----
 #download bioclimatic raster
-# Worldclim<-raster::getData('worldclim', var='bio', res=10)
-Worldclim<-geodata::worldclim_global(var='bio', res=10, path=getwd()) 
+Worldclim<-raster::getData('worldclim', var='bio', res=10) 
 envData<-crop(Worldclim, extent(-12, 25, 36, 60))
 envData
 rm(Worldclim)
-envData<-stack(envData)
 rpc<-rasterPCA(envData,spca = TRUE)
 dt <- na.omit(data.table(as.data.frame(rpc$map[[c("PC1", "PC2")]], xy = TRUE)))
 dt<-st_as_sf(dt, coords = c("PC1", "PC2"))
-myRes<-USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr=4)
+# myRes<-USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr=4)
+myRes<-list()
+myRes$Opt_res<-6
 
 #---- 3. Generate virtual species, create pseudo-absences using different sampling approaches, SDMs exercise and models statistics -----
 nVirtspecies <- 10
@@ -37,10 +38,10 @@ percTesting <- 30
 Nreps <- 5
 myFold <- 5
 myCores <-5
-BuffSize <- 50*10^3 #c(50*10^3, 100*10^3, 200*10^3) #in meters
+BuffSize <- c(50*10^3, 100*10^3, 200*10^3) #in meters
 myCRS <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
-Vsprev <- 0.25 #species geographic prevalence 
-bgk_prev <- 1 #0.5 #sample prevalence 
+Vsprev <- 0.25 # species geographic prevalence 
+bgk_prev <- 1  # sample prevalence 
 
 #run the whole framework
 myVirtualSP_list <- list()
@@ -58,9 +59,9 @@ for(myVs in 1:nVirtspecies){
   
   #reclassify suitability raster using a probability conversion rule
   new.pres <- convertToPA(x=random.sp,
-                        beta="random",
-                        alpha = -0.05, plot = FALSE , 
-                        species.prevalence = Vsprev)
+                          beta="random",
+                          alpha = -0.05, plot = FALSE , 
+                          species.prevalence = Vsprev)
   
   # Sample true occurrences
   presence.points <- sampleOccurrences(new.pres,
@@ -80,20 +81,20 @@ for(myVs in 1:nVirtspecies){
   myOut_list <- list()
   
   for(k in 1:length(env_datasets)){
-    k=2
+    # k=2
     # Create pseudo absences using kernel and environmental distances
     set.seed(666)
     
     #grid.psAbs_sampling in grid
-    myGrid.psAbs <- USE::paSampling(env_datasets[[k]],
-                                            pres=myPres,
-                                            thres=0.75,
-                                            H=NULL,
-                                            grid.res=myRes$Opt_res,
-                                            prev=bgk_prev, sub.ts=FALSE,
-                                            plot_proc=FALSE)
-
+    myGrid.psAbs <- USE::paSampling(env_datasets[[k]], 
+                                    pres=myPres, 
+                                    thres=0.75,  
+                                    H=NULL,
+                                    grid.res=myRes$Opt_res, 
+                                    prev=bgk_prev, sub.ts=FALSE, 
+                                    plot_proc=FALSE)
     
+    #only keep coords
     myGrid.psAbs <- data.frame(x = myGrid.psAbs$x, y = myGrid.psAbs$y)
     coordinates(myGrid.psAbs) <- ~x+y
     raster::crs(myGrid.psAbs) <- myCRS
@@ -101,37 +102,51 @@ for(myVs in 1:nVirtspecies){
     obs_prev <- round(nrow(myPres)/length(myGrid.psAbs),2)
     
     # create pseudoabs from buffer
-    buf <- circles(myPres, d = BuffSize[1], lonlat = TRUE)
-       
+    buf<-lapply(BuffSize, function(x){circles(myPres, d = x, lonlat = TRUE)})
+
     # buffer OUT, constrained by convex hull
     chull <- myPres %>% st_as_sf() %>% 
       summarise( geometry = st_combine( geometry ) ) %>%
       st_convex_hull()
     chull <- as(st_geometry(chull), "Spatial")
-    buf.mask <- mask(envData[[1]], rgeos::gUnaryUnion(buf@polygons),inverse=TRUE)
-    buf.mask <- mask(buf.mask, chull)
-    myPseudo_buf<- as.data.frame(sampleRandom(buf.mask, 
-                                              size = round(length(myPres)/bgk_prev) , 
-                                              xy = TRUE))
-    coordinates(myPseudo_buf)<-~x+y
     
-    
+    buf.mask <-lapply(buf, function(x){mask(envData[[1]], rgeos::gUnaryUnion(x@polygons),inverse=TRUE)})
+    buf.mask <- lapply(buf.mask, function(x){mask(x, chull)})
+    myPseudo_buf <- lapply(buf.mask, function(x){as.data.frame(sampleRandom(x, 
+                                                                            size = round(length(myPres)/bgk_prev) , 
+                                                                            xy = TRUE))})
     #create the training datasets
     b <- as(extent(envData), "SpatialPolygons")
     myPseudo_rand <- spsample(b, n =  round(length(myPres)/bgk_prev), type = "random")
     myPseudo_rand <- SpatialPointsDataFrame(myPseudo_rand,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
     
-    myPseudo_buf <- SpatialPointsDataFrame(myPseudo_buf,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
+    # myPseudo_buf <- SpatialPointsDataFrame(myPseudo_buf,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
+    
+    myPseudo_buf.50km <- myPseudo_buf[[1]]
+    coordinates(myPseudo_buf.50km)<-~x+y
+    myPseudo_buf.50km <- SpatialPointsDataFrame(myPseudo_buf.50km,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
+    
+    myPseudo_buf.100km <- myPseudo_buf[[2]]
+    coordinates(myPseudo_buf.100km)<-~x+y
+    myPseudo_buf.100km <- SpatialPointsDataFrame(myPseudo_buf.100km,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
+    
+    myPseudo_buf.200km <- myPseudo_buf[[3]]
+    coordinates(myPseudo_buf.200km)<-~x+y
+    myPseudo_buf.200km <- SpatialPointsDataFrame(myPseudo_buf.200km,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
+    
     myGrid.psAbs$Observed <- rep(0, nrow(myGrid.psAbs@coords))
     
     proj4string(myPseudo_rand) <- raster::crs(myPres)
-    proj4string(myPseudo_buf) <- raster::crs(myPres)
+    proj4string(myPseudo_buf.50km) <- raster::crs(myPres)
+    proj4string(myPseudo_buf.100km) <- raster::crs(myPres)
+    proj4string(myPseudo_buf.200km) <- raster::crs(myPres)
     proj4string(myGrid.psAbs) <- raster::crs(myPres)
     
-    myPAlist=list(
+    myPAlist <- list(
       "mytrain_rand"=myPres+myPseudo_rand, 
-      "mytrain_buf_out"=myPres+myPseudo_buf,
-      # "mytrain_buf_in"=myPres+innerBuf,
+      "mytrain_buf_out50"=myPres+myPseudo_buf.50km,
+      "mytrain_buf_out100"=myPres+myPseudo_buf.100km,
+      "mytrain_buf_out200"=myPres+myPseudo_buf.200km,
       "mytrain_grid" = myPres+myGrid.psAbs)
     
     #dataset for predictions
@@ -154,14 +169,14 @@ for(myVs in 1:nVirtspecies){
       m1 <- sdm(Observed~.,data=d,
                 methods=c('glm', 'rf' ,'gam' , 'brt', 'Maxent'),
                 replication='sub',test.percent=percTesting,n=Nreps, parallelSettings=list("parallel", ncore=myCores))
-     
+      
       #store info of the models statistics (internal validation on the subsets)
       p <- length(which(myPAlist[[i]]$Observed==1))
       pseabs <- length(which(myPAlist[[i]]$Observed==0))
       tmp_out <- setNames(data.frame(matrix(ncol = 21, nrow = 0)), c("Species", "trainig_set", "exp_prevalence",  "obs_prevalence", "pres",'abs', "prop_corr_abs", "nDrivingFactors", 
-                                                                  "ModelType", "nPredictorsPCA", "nPredictorsModel", 
-                                                                  "AUC", "COR", "Deviance", "TSS", "Kappa", 
-                                                                  "Sensitivity", "Specificity", "BoyceI", 'RMSE',"R2"   ))
+                                                                     "ModelType", "nPredictorsPCA", "nPredictorsModel", 
+                                                                     "AUC", "COR", "Deviance", "TSS", "Kappa", 
+                                                                     "Sensitivity", "Specificity", "BoyceI", 'RMSE',"R2"   ))
       mynames <- names(tmp_out)
       
       if(is.null(unlist(lapply(m1@models$Observed$glm, function(x){x@errorLog})))){
@@ -273,10 +288,10 @@ for(myVs in 1:nVirtspecies){
       rmse.distribution <- apply(m1.preds[,2:ncol(m1.preds)], 2, function(x){round(Metrics::rmse(m1.preds$layer,x),3)})
       cor.distribution <- apply(m1.preds[,2:ncol(m1.preds)], 2, function(x){round(cor(m1.preds$layer,x),3)})
       rmse.distribution <- data.frame(ModelType=attributes(rmse.distribution)$names, 
-                                    rmse.distribution=rmse.distribution, 
-                                    cor.distribution=cor.distribution)
+                                      rmse.distribution=rmse.distribution, 
+                                      cor.distribution=cor.distribution)
       rmse.distribution$ModelType <- gsub(sapply(rmse.distribution$ModelType, function(x){strsplit(x, "_")[[1]][[4]]}), 
-                                       pattern=".re", replacement = "")
+                                          pattern=".re", replacement = "")
       
       rmse.distribution <- rmse.distribution %>% 
         group_by(ModelType) %>% 
@@ -287,8 +302,8 @@ for(myVs in 1:nVirtspecies){
       
       tmp_out<-tmp_out %>% 
         left_join(rmse.distribution, by="ModelType")
-  
-    myOut_tmp <- rbind(myOut_tmp, tmp_out)
+      
+      myOut_tmp <- rbind(myOut_tmp, tmp_out)
       
     }
     #store myOut_tmp for different environmental datasets used for modelling
@@ -302,5 +317,66 @@ for(myVs in 1:nVirtspecies){
 length(myVirtualSP_list)
 myVirtualSP_list[[1]]
 
-outname <- paste0("simulations/",nVirtspecies, "vs_prev", sub("\\.", "", as.character(bgk_prev)), "_occOnly_radius_newKern_IMPO", BuffSize/1000, "km" , Sys.Date(), ".RDS")
+outname <- paste0("simulations/paper_sim/June2023/",nVirtspecies, "vs_prev", sub("\\.", "", as.character(bgk_prev)), "_occOnly_", "radiusSensitivity_", Sys.Date(), ".RDS")
 saveRDS(myVirtualSP_list, outname)
+
+#---- 1. load 50 virtual species simulations results----
+myVirtualSP_list <- readRDS("simulations/paper_sim/June2023/10vs_prev1_occOnly_radiusSensitivity_2023-05-13.RDS")
+myProc_out <- do.call(rbind, myVirtualSP_list)
+
+#pivot longer and boxplot
+tmp <-   myProc_out %>%
+  as_tibble() %>%
+  dplyr::select(trainig_set,  
+                AUC, TSS, nPredictorsModel, ModelType, rmse.distribution, Sensitivity, Specificity, BoyceI) %>% 
+  mutate(trainig_set=as.factor(trainig_set),
+         nPredictorsModel=as.factor(nPredictorsModel),
+         BoyceI=round(as.numeric(gsub(",", "", BoyceI)),3),
+         AUC=round(as.numeric(gsub(",", "", AUC)),3),
+         TSS=round(as.numeric(gsub(",", "", TSS)),3),
+         Sensitivity=round(as.numeric(gsub(",", "", Sensitivity)),3) , 
+         Specificity=round(as.numeric(gsub(",", "", Specificity)),3)) %>% 
+  group_by(trainig_set, ModelType, nPredictorsModel) %>% 
+  pivot_longer(cols = c(AUC, BoyceI, Sensitivity, Specificity, rmse.distribution, TSS )) %>% 
+  mutate(trainig_set=factor(trainig_set, levels= c( "mytrain_grid", "mytrain_rand", "mytrain_buf_out50", "mytrain_buf_out100", "mytrain_buf_out200")), 
+         ModelType=factor(ModelType, levels= c("GLM", "GAM", "RF", "BRT", "Maxent")), 
+         name=factor(name, levels= c("AUC", "BoyceI", "Sensitivity", "Specificity", "TSS","rmse.distribution")),
+         new_name_tr_set=dplyr::recode(trainig_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out50="BufferOut50km", mytrain_buf_out100="BufferOut100km", mytrain_buf_out200="BufferOut200km")) %>%
+  mutate(name=dplyr::recode(name, BoyceI = "CBI"), 
+         name=dplyr::recode(name,  rmse.distribution = "RMSE"))
+
+#---- 2. Influence of the pseudo-absences sampling approach on HSMs predictive accuracy statistics ----
+Npred <- 5
+mySpecies <- 10
+myPrev <- 1
+mytitle <- paste0("N. species = ",mySpecies, "; Prevalence = ", myPrev, "; N. predictors= ", Npred)
+
+# colorblind palette with black:
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+unique(tmp$new_name_tr_set)[1]
+
+p <- tmp %>% 
+  filter(nPredictorsModel == Npred) %>% 
+  ggplot(aes(new_name_tr_set , value, color=new_name_tr_set))+ 
+  geom_violin()+
+  stat_summary(fun = median, geom = "point", size = 2) +
+  scale_color_manual(breaks = c("Uniform", "Random","BufferOut50km", "BufferOut100km", "BufferOut200km" ),
+                     values=c( "#0072B2", "#E69F00",  "#CC79A7", "#824E6B", "#422837"))+
+  labs(x="", y="Predictive accuracy metrics value", color="Sampling method")+
+  facet_grid(ModelType~name, scales = "free_y")+
+  ylim(0,1)+
+  scale_fill_brewer(palette = 'Set1')+
+  scale_x_discrete(labels = NULL, breaks = NULL) +
+  # ggtitle(mytitle)+
+  theme_light()+
+  theme(legend.background=element_blank(),
+        panel.grid = element_blank(),
+        legend.position = 'bottom',
+        text = element_text(size=16), 
+        strip.text = element_text(size=16),
+        legend.text = element_text(size=16,angle = 0), legend.title = element_text(size=14),
+        legend.key.size = unit(1.5, 'cm'))
+
+p
+outname <- paste0(outdir, mySpecies, "sp_prev", sub("\\.", "", as.character(myPrev)), "_", Npred,"pred_RadiusSens_",Sys.Date(), ".png")
+ggsave(p, filename = outname, width = 20, height = 15, device='png', dpi=320)
