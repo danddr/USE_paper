@@ -4,6 +4,7 @@ library(virtualspecies)
 library(tidyverse)
 library(ggplot2)
 library(dismo)
+library(cowplot)
 library(remotes)
 library(viridis)
 library(BuenColors)
@@ -13,7 +14,7 @@ source("color_density.R")
 cl <- colorRampPalette(c("#3E49BB", "#3498DB", "yellow", "orange", "red", "darkred"))
 myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
 
-#download bioclimatic raster
+#---- 1. download bioclimatic raster ----
 Worldclim <- raster::getData('worldclim', var='bio', res=10) #Valid resolutions are 0.5, 2.5, 5, and 10 (minutes of a degree). In the case of res=0.5, you must also provide a lon and lat argument for a tile
 my.stack <- crop(Worldclim, extent(-12, 25, 36, 60))
 b <- as(extent(my.stack), "SpatialPolygons")
@@ -45,7 +46,7 @@ env_pca %>%
   theme_light()+
   theme(legend.pos="bottom",  text = element_text(size=14),  legend.text=element_text(size=10))
 
-#create virtual species ----
+#---- 2. Create virtual species ----
 random.sp <- virtualspecies::generateRandomSp(envData, 
                                               convert.to.PA = FALSE, 
                                               species.type = "additive",
@@ -120,7 +121,7 @@ proj4string(myGrid.psAbs) <- raster::crs(myPres)
 my_meth <- list( myPseudo_rand, innerBuf, myPseudo_buf)
 meth_name <- c( "Random", "BufferOut")
 
-#---- extract PC_scores from the geographic space ----
+#---- 4. extract PC_scores from the geographic space ----
 pcstack
 myOut_list <- list()
 for(i in 1:length(my_meth)){
@@ -143,7 +144,7 @@ myOut_list <- myOut_list %>%
 names(myOut_list) 
 myOut_list$group <- factor(myOut_list$group, levels = c( "Uniform", "Random", "BufferOut"))
 
-#---- plot bivariate geom dens----
+#---- 5. plot bivariate geom dens----
 myOut_list %>% 
   ggplot( aes(PC1, PC2))+
   geom_density_2d(col= "darkgray")+
@@ -194,11 +195,10 @@ p2 <- myOut_list %>%
 
 p2
 
-library(cowplot)
+#combine plots
 pp <-plot_grid(p,p2, ncol=2,labels = "AUTO")
 outname <- paste("bivariate_dens_plot_UESampling_", Sys.Date(),".pdf", sep="")
 ggsave(pp, filename = outname, width = 16, height = 8, device='pdf', dpi=320)
-
 
 #suppl mat
 p<-myOut_list %>% 

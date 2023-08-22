@@ -1,6 +1,7 @@
 #Violin plot figures
 library(tidyverse)
 library(ggplot2)
+
 #---- 1. load 50 virtual species simulations results----
 myVirtualSP_list <- readRDS("50vs_prev1_occOnly_radius50km_2023-06-15.RDS")
 myProc_out <- do.call(rbind, myVirtualSP_list)
@@ -22,12 +23,12 @@ tmp <- myProc_out %>%
   mutate(training_set=factor(training_set, levels= c( "mytrain_grid", "mytrain_rand", "mytrain_buf_out")), 
          ModelType=factor(ModelType, levels= c("GLM", "GAM", "RF", "BRT", "Maxent")), 
          name=factor(name, levels= c("AUC", "BoyceI", "Sensitivity", "Specificity", "TSS","rmse.distribution")),
-         new_name_tr_set=dplyr::recode(training_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out="BufferOut")) %>%
+         new_name_tr_set=dplyr::recode(training_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out="Buffer-out")) %>%
   mutate(name=dplyr::recode(name, BoyceI = "CBI"), 
          name=dplyr::recode(name,  rmse.distribution = "RMSE"))
 
 #---- 2. Influence of the pseudo-absences sampling approach on HSMs predictive accuracy statistics ----
-Npred <- 19
+Npred <- 5
 mySpecies <- 50
 myPrev <- 1
 mytitle <- paste0("N. species = ",mySpecies, "; Prevalence = ", myPrev, "; N. predictors= ", Npred)
@@ -41,7 +42,7 @@ p <- tmp %>%
       ggplot(aes(new_name_tr_set , value, color=new_name_tr_set))+ 
       geom_violin()+
       stat_summary(fun = median, geom = "point", size = 2) +
-      scale_color_manual(breaks = c("True Absences", "Uniform", "Random",  "BufferIn", "BufferOut" ),
+      scale_color_manual(breaks = c("True Absences", "Uniform", "Random",  "BufferIn", "Buffer-out" ),
                          values=c("#D55E00", "#0072B2", "#E69F00", "#009E73", "#CC79A7" ))+
       labs(x="", y="Predictive accuracy metrics value", color="Sampling method")+
       facet_grid(ModelType~name, scales = "free_y")+
@@ -84,7 +85,7 @@ tmp <- myProc_out %>%
   mutate(training_set=factor(training_set, levels= c( "mytrain_grid", "mytrain_rand", "mytrain_buf_out")), 
          ModelType=factor(ModelType, levels= c("GLM", "GAM", "RF", "BRT", "Maxent")), 
          name=factor(name, levels= c("AUC", "BoyceI", "Sensitivity", "Specificity", "TSS","rmse.distribution")),
-         new_name_tr_set=dplyr::recode(training_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out="BufferOut")) %>%
+         new_name_tr_set=dplyr::recode(training_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out="Buffer-out")) %>%
   mutate(name=dplyr::recode(name, BoyceI = "CBI"), 
          name=dplyr::recode(name,  rmse.distribution = "RMSE"))
 
@@ -101,7 +102,7 @@ p <- tmp %>%
   ggplot(aes(new_name_tr_set , value, color=new_name_tr_set))+ 
   geom_violin()+
   stat_summary(fun = median, geom = "point", size = 2) +
-  scale_color_manual(breaks = c( "Uniform", "Random",   "BufferOut" ),
+  scale_color_manual(breaks = c( "Uniform", "Random",   "Buffer-out" ),
                      values=c( "#0072B2", "#E69F00",  "#CC79A7" ))+
   labs(x="", y="Predictive accuracy metrics value", color="Sampling method")+
   facet_grid(ModelType~name, scales = "free_y")+
@@ -144,7 +145,7 @@ tmp <- myProc_out %>%
   mutate(training_set=factor(training_set, levels= c( "mytrain_grid", "mytrain_rand", "mytrain_buf_out")), 
          ModelType=factor(ModelType, levels= c("GLM", "GAM", "RF", "BRT", "Maxent")), 
          name=factor(name, levels= c("AUC", "BoyceI", "Sensitivity", "Specificity", "TSS","rmse.distribution")),
-         new_name_tr_set=dplyr::recode(training_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out="BufferOut")) %>%
+         new_name_tr_set=dplyr::recode(training_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out="Buffer-out")) %>%
   mutate(name=dplyr::recode(name, BoyceI = "CBI"), 
          name=dplyr::recode(name,  rmse.distribution = "RMSE"))
 
@@ -161,7 +162,7 @@ p <- tmp %>%
   ggplot(aes(new_name_tr_set , value, color=new_name_tr_set))+ 
   geom_violin()+
   stat_summary(fun = median, geom = "point", size = 2) +
-  scale_color_manual(breaks = c("True Absences", "Uniform", "Random",  "BufferIn", "BufferOut" ),
+  scale_color_manual(breaks = c("True Absences", "Uniform", "Random",  "BufferIn", "Buffer-out" ),
                      values=c("#D55E00", "#0072B2", "#E69F00", "#009E73", "#CC79A7" ))+
   labs(x="", y="Predictive accuracy metrics value", color="Sampling method")+
   facet_grid(ModelType~name, scales = "free_y")+

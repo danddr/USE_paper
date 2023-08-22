@@ -1,36 +1,31 @@
 # Daniele Da Re, Manuele Bazzichetto, Enrico Tordoni
 # 20230616
 #---- 1. Load libraries and external functions -----
-library(USE)
 library(raster)
+library(sf)
+library(USE)
 library(virtualspecies)
+library(dismo)
 library(sdm)
 library(ranger)
-library(dismo)
-library(sf)
-library(Metrics)
-library(ggplot2)
 library(tidyverse)
-library("foreach")
+library(foreach)
 library(parallel)
 library(doParallel)
-library(RStoolbox)
-library(data.table)
 library(ecospat)
-source("script/d_squared.R")
+library(Metrics)
 
+source("script/d_squared.R")
 #---- 2. Download bioclimatic rasters -----
 #download bioclimatic raster
-Worldclim<-raster::getData('worldclim', var='bio', res=10) 
-envData<-crop(Worldclim, extent(-12, 25, 36, 60))
-envData
+# Worldclim<-raster::getData('worldclim', var='bio', res=10)
+Worldclim <- geodata::worldclim_global(var='bio', res=10, path=getwd()) 
+envData <- terra::crop(Worldclim, terra::ext(-12, 25, 36, 60))
 rm(Worldclim)
-rpc<-rasterPCA(envData,spca = TRUE)
-dt <- na.omit(data.table(as.data.frame(rpc$map[[c("PC1", "PC2")]], xy = TRUE)))
-dt<-st_as_sf(dt, coords = c("PC1", "PC2"))
-# myRes<-USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr=4)
-myRes<-list()
-myRes$Opt_res<-6
+rpc <- USE::rastPCA(envData, nPC = 2, naMask = TRUE, stand = TRUE)
+dt <- na.omit(terra::as.data.frame(rpc$PCs, xy=TRUE))
+dt <- sf::st_as_sf(dt, coords = c("PC1", "PC2"))
+myRes<-USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr=4)
 
 #---- 3. Generate virtual species, create pseudo-absences using different sampling approaches, SDMs exercise and models statistics -----
 nVirtspecies <- 10
@@ -42,6 +37,8 @@ BuffSize <- c(50*10^3, 100*10^3, 200*10^3) #in meters
 myCRS <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
 Vsprev <- 0.25 # species geographic prevalence 
 bgk_prev <- 1  # sample prevalence 
+
+envData <- raster::stack(envData) # convert to raster object, otherwise virtualspecies R pkg doesn't work
 
 #run the whole framework
 myVirtualSP_list <- list()
@@ -119,9 +116,7 @@ for(myVs in 1:nVirtspecies){
     b <- as(extent(envData), "SpatialPolygons")
     myPseudo_rand <- spsample(b, n =  round(length(myPres)/bgk_prev), type = "random")
     myPseudo_rand <- SpatialPointsDataFrame(myPseudo_rand,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
-    
-    # myPseudo_buf <- SpatialPointsDataFrame(myPseudo_buf,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
-    
+      
     myPseudo_buf.50km <- myPseudo_buf[[1]]
     coordinates(myPseudo_buf.50km)<-~x+y
     myPseudo_buf.50km <- SpatialPointsDataFrame(myPseudo_buf.50km,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
@@ -143,21 +138,22 @@ for(myVs in 1:nVirtspecies){
     proj4string(myGrid.psAbs) <- raster::crs(myPres)
     
     myPAlist <- list(
-      "mytrain_rand"=myPres+myPseudo_rand, 
-      "mytrain_buf_out50"=myPres+myPseudo_buf.50km,
-      "mytrain_buf_out100"=myPres+myPseudo_buf.100km,
-      "mytrain_buf_out200"=myPres+myPseudo_buf.200km,
-      "mytrain_grid" = myPres+myGrid.psAbs)
+      "mytrain_rand" = myPres+myPseudo_rand, 
+      "mytrain_buf_out50" = myPres+myPseudo_buf.50km,
+      "mytrain_buf_out100" = myPres+myPseudo_buf.100km,
+      "mytrain_buf_out200" = myPres+myPseudo_buf.200km,
+      "mytrain_grid" = myPres+myGrid.psAbs
+      )
     
     #dataset for predictions
-    mypredstack=env_datasets[[k]]
+    mypredstack <- env_datasets[[k]]
     
     #count proportion of correct absences
-    prop_corr_abs=lapply(myPAlist, function(x){y=subset(x, Observed==0); z=raster::extract(new.pres$pa.raster, y); 
+    prop_corr_abs <- lapply(myPAlist, function(x){y=subset(x, Observed==0); z=raster::extract(new.pres$pa.raster, y); 
     return(length(which(z==0))/length(z))})
     
     #modelling
-    myOut_tmp=data.frame() 
+    myOut_tmp <- data.frame() 
     for(i in 1:length(myPAlist)){
       # i=1
       cat(paste("\nModel ",i,"/",length(myPAlist),"\n"))
@@ -321,7 +317,7 @@ outname <- paste0("simulations/paper_sim/June2023/",nVirtspecies, "vs_prev", sub
 saveRDS(myVirtualSP_list, outname)
 
 #---- 1. load 50 virtual species simulations results----
-myVirtualSP_list <- readRDS("simulations/paper_sim/June2023/10vs_prev1_occOnly_radiusSensitivity_2023-05-13.RDS")
+myVirtualSP_list <- readRDS("10vs_prev1_occOnly_radiusSensitivity_2023-06-15.RDS")
 myProc_out <- do.call(rbind, myVirtualSP_list)
 
 #pivot longer and boxplot
@@ -341,7 +337,7 @@ tmp <-   myProc_out %>%
   mutate(trainig_set=factor(trainig_set, levels= c( "mytrain_grid", "mytrain_rand", "mytrain_buf_out50", "mytrain_buf_out100", "mytrain_buf_out200")), 
          ModelType=factor(ModelType, levels= c("GLM", "GAM", "RF", "BRT", "Maxent")), 
          name=factor(name, levels= c("AUC", "BoyceI", "Sensitivity", "Specificity", "TSS","rmse.distribution")),
-         new_name_tr_set=dplyr::recode(trainig_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out50="BufferOut50km", mytrain_buf_out100="BufferOut100km", mytrain_buf_out200="BufferOut200km")) %>%
+         new_name_tr_set=dplyr::recode(trainig_set, mytrain_grid= "Uniform", mytrain_rand= "Random",  mytrain_buf_out50="Buffer-out50km", mytrain_buf_out100="Buffer-out100km", mytrain_buf_out200="Buffer-out200km")) %>%
   mutate(name=dplyr::recode(name, BoyceI = "CBI"), 
          name=dplyr::recode(name,  rmse.distribution = "RMSE"))
 
@@ -360,7 +356,7 @@ p <- tmp %>%
   ggplot(aes(new_name_tr_set , value, color=new_name_tr_set))+ 
   geom_violin()+
   stat_summary(fun = median, geom = "point", size = 2) +
-  scale_color_manual(breaks = c("Uniform", "Random","BufferOut50km", "BufferOut100km", "BufferOut200km" ),
+  scale_color_manual(breaks = c("Uniform", "Random","Buffer-out50km", "Buffer-out100km", "Buffer-out200km" ),
                      values=c( "#0072B2", "#E69F00",  "#CC79A7", "#824E6B", "#422837"))+
   labs(x="", y="Predictive accuracy metrics value", color="Sampling method")+
   facet_grid(ModelType~name, scales = "free_y")+

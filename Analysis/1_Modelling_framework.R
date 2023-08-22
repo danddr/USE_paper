@@ -1,34 +1,30 @@
 # Daniele Da Re, Manuele Bazzichetto, Enrico Tordoni
-# 20230616
+# 20230822
 #---- 1. Load libraries and external functions -----
-library(USE)
 library(raster)
+library(sf)
+library(USE)
 library(virtualspecies)
+library(dismo)
 library(sdm)
 library(ranger)
-library(dismo)
-library(sf)
-library(Metrics)
-library(ggplot2)
 library(tidyverse)
-library("foreach")
+library(foreach)
 library(parallel)
 library(doParallel)
-library(RStoolbox)
-library(data.table)
 library(ecospat)
+library(Metrics)
+
 source("script/d_squared.R")
 #---- 2. Download bioclimatic rasters -----
 #download bioclimatic raster
 # Worldclim<-raster::getData('worldclim', var='bio', res=10)
-Worldclim<-geodata::worldclim_global(var='bio', res=10, path=getwd()) 
-envData<-crop(Worldclim, extent(-12, 25, 36, 60))
-envData
+Worldclim <- geodata::worldclim_global(var='bio', res=10, path=getwd()) 
+envData <- terra::crop(Worldclim, terra::ext(-12, 25, 36, 60))
 rm(Worldclim)
-envData<-stack(envData)
-rpc<-rasterPCA(envData,spca = TRUE)
-dt <- na.omit(data.table(as.data.frame(rpc$map[[c("PC1", "PC2")]], xy = TRUE)))
-dt<-st_as_sf(dt, coords = c("PC1", "PC2"))
+rpc <- USE::rastPCA(envData, nPC = 2, naMask = TRUE, stand = TRUE)
+dt <- na.omit(terra::as.data.frame(rpc$PCs, xy=TRUE))
+dt <- sf::st_as_sf(dt, coords = c("PC1", "PC2"))
 myRes<-USE::optimRes(sdf=dt, grid.res=c(1:12), perc.thr = 10, showOpt = TRUE, cr=4)
 
 #---- 3. Generate virtual species, create pseudo-absences using different sampling approaches, SDMs exercise and models statistics -----
@@ -41,6 +37,8 @@ BuffSize <- 50*10^3 #c(50*10^3, 100*10^3, 200*10^3) #in meters
 myCRS <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"
 Vsprev <- 0.25 #species geographic prevalence 
 bgk_prev <- 1 #0.5 #sample prevalence 
+
+envData <- raster::stack(envData) # convert to raster object, otherwise virtualspecies R pkg doesn't work
 
 #run the whole framework
 myVirtualSP_list <- list()
@@ -72,15 +70,15 @@ for(myVs in 1:nVirtspecies){
   plot(new.pres$pa.raster, main=paste("species #",   myVs))
   
   myPres <- presence.points$sample.points[, c( "x", "y",  "Observed")]
-  coordinates(myPres)<- ~x+y
-  raster::crs(myPres)<- myCRS
+  coordinates(myPres) <- ~x+y
+  raster::crs(myPres) <- myCRS
   
   # loop on two sets of environmental dataset: one with 5 bioclimatic variables and one with 19 bioclimatic variables
   env_datasets <- list(envData, envData[[random.sp$details$variables]])
   myOut_list <- list()
   
   for(k in 1:length(env_datasets)){
-    k=2
+    #k=2
     # Create pseudo absences using kernel and environmental distances
     set.seed(666)
     
@@ -97,7 +95,6 @@ for(myVs in 1:nVirtspecies){
     myGrid.psAbs <- data.frame(x = myGrid.psAbs$x, y = myGrid.psAbs$y)
     coordinates(myGrid.psAbs) <- ~x+y
     raster::crs(myGrid.psAbs) <- myCRS
-    # plot(myGrid.psAbs, add=T)
     obs_prev <- round(nrow(myPres)/length(myGrid.psAbs),2)
     
     # create pseudoabs from buffer
@@ -120,7 +117,6 @@ for(myVs in 1:nVirtspecies){
     b <- as(extent(envData), "SpatialPolygons")
     myPseudo_rand <- spsample(b, n =  round(length(myPres)/bgk_prev), type = "random")
     myPseudo_rand <- SpatialPointsDataFrame(myPseudo_rand,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
-    
     myPseudo_buf <- SpatialPointsDataFrame(myPseudo_buf,data.frame("Observed"=rep(0,  round(length(myPres)/bgk_prev))))
     myGrid.psAbs$Observed <- rep(0, nrow(myGrid.psAbs@coords))
     
@@ -128,21 +124,21 @@ for(myVs in 1:nVirtspecies){
     proj4string(myPseudo_buf) <- raster::crs(myPres)
     proj4string(myGrid.psAbs) <- raster::crs(myPres)
     
-    myPAlist=list(
-      "mytrain_rand"=myPres+myPseudo_rand, 
-      "mytrain_buf_out"=myPres+myPseudo_buf,
-      # "mytrain_buf_in"=myPres+innerBuf,
-      "mytrain_grid" = myPres+myGrid.psAbs)
+    myPAlist <- list(
+      "mytrain_rand" = myPres+myPseudo_rand, 
+      "mytrain_buf_out" = myPres+myPseudo_buf,
+      "mytrain_grid" = myPres+myGrid.psAbs
+      )
     
     #dataset for predictions
-    mypredstack=env_datasets[[k]]
+    mypredstack <- env_datasets[[k]]
     
     #count proportion of correct absences
-    prop_corr_abs=lapply(myPAlist, function(x){y=subset(x, Observed==0); z=raster::extract(new.pres$pa.raster, y); 
+    prop_corr_abs <- lapply(myPAlist, function(x){y=subset(x, Observed==0); z=raster::extract(new.pres$pa.raster, y); 
     return(length(which(z==0))/length(z))})
     
     #modelling
-    myOut_tmp=data.frame() 
+    myOut_tmp <- data.frame() 
     for(i in 1:length(myPAlist)){
       # i=1
       cat(paste("\nModel ",i,"/",length(myPAlist),"\n"))
