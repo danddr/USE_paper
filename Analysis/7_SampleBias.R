@@ -256,6 +256,6 @@ library(dunn.test)
 myProc_out %>% 
   dplyr::select(training_set, PCs, range) %>% 
   split(.$PCs) %>%   
-  map(~dunn.test(x = .$range, g =.$training_set , method = "holm",list=TRUE,wrap=TRUE)) 
+  map(~dunn.test(x = .$range, g =.$training_set, altp=TRUE, method = "holm",list=TRUE,wrap=TRUE)) 
 
 
