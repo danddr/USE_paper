@@ -2,7 +2,7 @@
 Script and examples used for the USE paper
 
 ## Example of USE application with *Fagus sylvatica*
-This repo includes i) the R scripts (Analysis) for replicating the analyses described in the paper, and ii) the R script (Example) for replicating the analyses of the distribution of Fagus sylvatica across west Europe (Italy, France and Spain). 
+This repo includes i) the R scripts (Analysis) for replicating the analyses described in the paper [Da Re et al., (2023)](https://doi.org/10.1111/2041-210X.14209), and ii) the R script (Example) for replicating the analyses of the distribution of Fagus sylvatica across west Europe (Italy, France and Spain). 
 
 The R script of the analyses provides a step-by-step guide on how to use the [USE](https://github.com/danddr/USE) R package (Daniele Da Re, Enrico Tordoni and Manuele Bazzichetto) to uniformly sample the environmental space and collect pseudo-absences for species distribution modelling.
 
